@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AQF — Alpha Quant Fund</title>
+<style>
+  :root { --bg:#0d1117; --panel:#161b22; --border:#30363d; --text:#e6edf3; --muted:#8b949e;
+          --green:#3fb950; --red:#f85149; --accent:#d97757; --gold:#d4a72c; }
+  * { box-sizing:border-box; margin:0; }
+  body { background:var(--bg); color:var(--text); font-family:"Segoe UI",Tahoma,sans-serif; padding:20px; max-width:1100px; margin:0 auto; }
+  h1 { font-size:20px; display:flex; align-items:center; gap:9px; }
+  h1 .dot { width:13px; height:13px; border-radius:50%; background:var(--accent); }
+  .sub { color:var(--muted); font-size:12.5px; margin:4px 0 18px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-bottom:14px; }
+  .card { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:12px 14px; }
+  .card .label { color:var(--muted); font-size:11.5px; margin-bottom:4px; }
+  .card .value { font-size:20px; font-weight:600; }
+  .pos { color:var(--green); } .neg { color:var(--red); }
+  section { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:14px; margin-bottom:14px; overflow-x:auto; }
+  section h2 { font-size:13.5px; margin-bottom:9px; color:var(--accent); }
+  table { width:100%; border-collapse:collapse; font-size:12px; white-space:nowrap; }
+  th { text-align:right; color:var(--muted); font-weight:500; padding:4px 8px; border-bottom:1px solid var(--border); }
+  td { text-align:right; padding:5px 8px; border-bottom:1px solid #21262d; font-variant-numeric:tabular-nums; }
+  th:first-child, td:first-child { text-align:left; }
+  .sym { font-weight:600; } .muted { color:var(--muted); }
+  .funnel { display:flex; flex-wrap:wrap; gap:6px; font-size:12px; color:var(--muted); }
+  .funnel b { color:var(--text); }
+  #chart { width:100%; height:220px; }
+  footer { color:var(--muted); font-size:11.5px; margin-top:18px; line-height:1.6; }
+</style>
+</head>
+<body>
+  <h1><span class="dot"></span>AQF — Alpha Quant Fund</h1>
+  <div class="sub">พอร์ตกระดาษ $1,500 บริหารโดย Claude ตามระบบ quant (Alpha Picks–inspired PRD) • โจทย์: ชนะ S&P 500 • ไม่ใช่คำแนะนำการลงทุน</div>
+  <div class="grid" id="stats"></div>
+  <section><h2>NAV vs SPY</h2><svg id="chart" viewBox="0 0 1000 220" preserveAspectRatio="none"></svg></section>
+  <section><h2>Funnel</h2><div class="funnel" id="funnel"></div></section>
+  <section><h2>Holdings</h2><table id="holdings"></table></section>
+  <footer>อัพเดทอัตโนมัติทุกวันเทรดโดย daily routine • เข้า/ออกตามกติกา: Strong Buy 75 วันติด, Hold 180 วันขาย, กำไร +100% ขายเฉพาะเงินต้นปล่อยที่เหลือวิ่ง, ชนเพดาน 15% ตัดเหลือ 10%</footer>
+<script>
+const fmt = (n,d=2) => n==null ? "—" : Number(n).toLocaleString("en-US",{minimumFractionDigits:d,maximumFractionDigits:d});
+const pct = n => (n>=0?"+":"")+fmt(n)+"%";
+const cls = n => n>=0?"pos":"neg";
+fetch("./dashboard.json").then(r=>r.json()).then(d=>{
+  const last = d.nav_history[d.nav_history.length-1];
+  const start = d.config.START_CAPITAL;
+  const ret = (last.nav/start-1)*100, spy = (last.spy_value/start-1)*100, alpha = ret-spy;
+  document.getElementById("stats").innerHTML = `
+    <div class="card"><div class="label">NAV (${last.date})</div><div class="value">$${fmt(last.nav)}</div></div>
+    <div class="card"><div class="label">Return</div><div class="value ${cls(ret)}">${pct(ret)}</div></div>
+    <div class="card"><div class="label">SPY</div><div class="value ${cls(spy)}">${pct(spy)}</div></div>
+    <div class="card"><div class="label">Alpha</div><div class="value ${cls(alpha)}">${fmt(alpha)} pp</div></div>
+    <div class="card"><div class="label">Positions</div><div class="value">${d.holdings.length}</div></div>`;
+  const f = d.funnel||{};
+  document.getElementById("funnel").innerHTML =
+    `<span>Universe <b>${f.N0_universe??"—"}</b></span><span>→ มีราคา <b>${f.N1_priced??"—"}</b></span>
+     <span>→ gate <b>${f.N2_gate??"—"}</b></span><span>→ Strong Buy <b>${f.N3_strong_buy??"—"}</b></span>
+     <span>→ streak≥75 <b>${f.N4_streak75??"—"}</b></span><span>→ eligible <b>${f.N7_final_pool??"—"}</b></span>`;
+  const hh = d.holdings.sort((a,b)=>b.value-a.value);
+  const total = hh.reduce((s,x)=>s+x.value,0)+d.cash;
+  document.getElementById("holdings").innerHTML =
+    `<tr><th>หุ้น</th><th>เข้าเมื่อ</th><th>ทุน</th><th>ราคา</th><th>P/L</th><th>น้ำหนัก</th><th>สถานะ</th></tr>`+
+    hh.map(h=>`<tr><td class="sym">${h.symbol}${h.winner?" 🏆":""}</td><td class="muted">${h.entry_date}</td>
+      <td>$${fmt(h.entry_price)}</td><td>$${fmt(h.price)}</td><td class="${cls(h.pl_pct)}">${pct(h.pl_pct)}</td>
+      <td>${fmt(h.value/total*100,1)}%</td><td class="muted">${h.state}${h.hold_streak?` (H${h.hold_streak}/180)`:""}</td></tr>`).join("")+
+    `<tr><td class="sym">CASH</td><td></td><td></td><td></td><td></td><td>${fmt(d.cash/total*100,1)}%</td><td></td></tr>`;
+  // NAV chart (SVG เพียวๆ ไม่พึ่ง lib)
+  const hist = d.nav_history;
+  if (hist.length > 1) {
+    const vals = hist.flatMap(h=>[h.nav,h.spy_value]);
+    const lo = Math.min(...vals)*0.995, hi = Math.max(...vals)*1.005;
+    const x = i => i/(hist.length-1)*990+5, y = v => 210-(v-lo)/(hi-lo)*200;
+    const path = k => hist.map((h,i)=>`${i?"L":"M"}${x(i).toFixed(1)},${y(h[k]).toFixed(1)}`).join("");
+    document.getElementById("chart").innerHTML =
+      `<path d="${path("spy_value")}" fill="none" stroke="#8b949e" stroke-width="1.5"/>
+       <path d="${path("nav")}" fill="none" stroke="#d97757" stroke-width="2"/>`;
+  }
+});
+</script>
+</body>
+</html>
